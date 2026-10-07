@@ -46,7 +46,19 @@ class NetworkStopDetail {
 class NetworkNearbyStop {
   final String id, name;
   final double lat, lon, distanceM;
-  const NetworkNearbyStop({required this.id, required this.name, required this.lat, required this.lon, required this.distanceM});
+  final String? nextDeparture, nextRouteShortName, nextRouteName, nextHeadsign, nextStatus;
+  const NetworkNearbyStop({
+    required this.id,
+    required this.name,
+    required this.lat,
+    required this.lon,
+    required this.distanceM,
+    this.nextDeparture,
+    this.nextRouteShortName,
+    this.nextRouteName,
+    this.nextHeadsign,
+    this.nextStatus,
+  });
 }
 
 class NetworkGeometry {
