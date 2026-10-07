@@ -59,7 +59,10 @@ class _HomePageState extends State<HomePage> {
         child: IndexedStack(
           index: tab,
           children: [
-            ExplorerPage(onLocate: locate),
+            ExplorerPage(
+              onLocate: locate,
+              onSearch: () => setState(() => tab = 1),
+            ),
             const SearchPage(),
             const AlertsPage(),
             const StreetPage(),
@@ -84,7 +87,8 @@ class _HomePageState extends State<HomePage> {
 
 class ExplorerPage extends StatefulWidget {
   final VoidCallback onLocate;
-  const ExplorerPage({super.key, required this.onLocate});
+  final VoidCallback onSearch;
+  const ExplorerPage({super.key, required this.onLocate, required this.onSearch});
   @override
   State<ExplorerPage> createState() => _ExplorerPageState();
 }
@@ -141,11 +145,15 @@ class _ExplorerPageState extends State<ExplorerPage> {
       SliverPadding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 10), sliver: SliverToBoxAdapter(
         child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 24, offset: const Offset(0, 8))]),
-          child: const Padding(padding: EdgeInsets.all(16), child: Row(children: [
-            Icon(Icons.search, color: Color(0xFF008F60)), SizedBox(width: 12),
-            Expanded(child: Text('Où voulez-vous aller ?', style: TextStyle(fontSize: 16, color: Colors.black54))),
-            Icon(Icons.tune, size: 20, color: Colors.black45),
-          ])),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: onSearch,
+            child: const Padding(padding: EdgeInsets.all(16), child: Row(children: [
+              Icon(Icons.search, color: Color(0xFF008F60)), SizedBox(width: 12),
+              Expanded(child: Text('Où voulez-vous aller ?', style: TextStyle(fontSize: 16, color: Colors.black54))),
+              Icon(Icons.tune, size: 20, color: Colors.black45),
+            ])),
+          ),
         ),
       )),
       SliverPadding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 12), sliver: SliverToBoxAdapter(
@@ -174,12 +182,28 @@ class _ExplorerPageState extends State<ExplorerPage> {
       if (nearby.isNotEmpty) SliverPadding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), sliver: SliverList.separated(
         itemCount: nearby.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (_, i) => Card(child: ListTile(
-          leading: const Icon(Icons.place_outlined, color: Color(0xFF008F60)),
-          title: Text(nearby[i].name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text('À environ \${nearby[i].distanceM.round()} m · horaires vérifiés après sélection'),
-          trailing: const Icon(Icons.chevron_right),
-        )),
+        itemBuilder: (_, i) {
+          final stop = nearby[i];
+          final route = stop.nextRouteShortName ?? stop.nextRouteName;
+          final departure = stop.nextDeparture;
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.place_outlined, color: Color(0xFF008F60)),
+              title: Text(stop.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text(
+                route == null
+                    ? 'À environ \${stop.distanceM.round()} m'
+                    : 'À environ \${stop.distanceM.round()} m · \${route}\${stop.nextHeadsign == null || stop.nextHeadsign!.trim().isEmpty ? '' : ' → \${stop.nextHeadsign}'}',
+              ),
+              trailing: departure == null
+                  ? const Text('—', style: TextStyle(color: Colors.black38, fontWeight: FontWeight.w800))
+                  : Text(
+                      departure,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF008F60)),
+                    ),
+            ),
+          );
+        },
       )),
       const SliverPadding(padding: EdgeInsets.fromLTRB(20, 0, 20, 24), sliver: SliverToBoxAdapter(child: _DataNotice())),
     ]);
