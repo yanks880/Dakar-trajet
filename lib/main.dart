@@ -147,7 +147,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 24, offset: const Offset(0, 8))]),
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: onSearch,
+            onTap: widget.onSearch,
             child: const Padding(padding: EdgeInsets.all(16), child: Row(children: [
               Icon(Icons.search, color: Color(0xFF008F60)), SizedBox(width: 12),
               Expanded(child: Text('Où voulez-vous aller ?', style: TextStyle(fontSize: 16, color: Colors.black54))),
@@ -222,34 +222,6 @@ class _AiSheet extends StatelessWidget {
       SizedBox(height: 16), TextField(decoration: InputDecoration(hintText: 'Posez votre question…', border: OutlineInputBorder())),
     ]),
   ));
-}
-
-class _SchedulePanel extends StatelessWidget {
-  const _SchedulePanel();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(22),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .05), blurRadius: 18, offset: const Offset(0, 7))],
-    ),
-    child: const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Icon(Icons.schedule_outlined, color: Color(0xFF008F60)),
-          SizedBox(width: 10),
-          Text('Horaires des trajets', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        ]),
-        SizedBox(height: 12),
-        Text('Aucun horaire vérifié à afficher pour le moment.', style: TextStyle(fontWeight: FontWeight.w700)),
-        SizedBox(height: 5),
-        Text('Dès qu’un GTFS officiel/opérateur sera importé, cette zone affichera la ligne, la direction et les prochains départs.', style: TextStyle(color: Colors.black54, height: 1.35)),
-      ],
-    ),
-  );
 }
 
 class SearchPage extends StatefulWidget {
