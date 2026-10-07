@@ -152,6 +152,11 @@ class NetworkRepository {
       lat: double.tryParse(item['lat']?.toString() ?? '') ?? 0,
       lon: double.tryParse(item['lon']?.toString() ?? '') ?? 0,
       distanceM: double.tryParse(item['distance_m']?.toString() ?? '') ?? 0,
+      nextDeparture: item['next_departure']?.toString(),
+      nextRouteShortName: item['next_route_short_name']?.toString(),
+      nextRouteName: item['next_route_name']?.toString(),
+      nextHeadsign: item['next_headsign']?.toString(),
+      nextStatus: item['next_status']?.toString(),
     )).where((x) => x.id.isNotEmpty && x.name.isNotEmpty && x.lat != 0 && x.lon != 0).toList();
   }
 
