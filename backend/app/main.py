@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
+import os
+import tempfile
 import zipfile
 from datetime import date, datetime, timezone
 from typing import Any
@@ -17,6 +19,7 @@ app = FastAPI(
 
 GTFS: dict[str, list[dict[str, str]]] = {}
 GTFS_LOADED = False
+GTFS_STORE_PATH = os.environ.get("DAKAR_BUS_GTFS_PATH", "/data/dakar_bus_gtfs.zip")
 
 
 class JourneyRequest(BaseModel):
@@ -130,6 +133,58 @@ def validate_gtfs(parsed: dict[str, list[dict[str, str]]]) -> list[str]:
                     return errors
 
     return errors[:50]
+
+
+def parse_gtfs_zip(payload: bytes) -> dict[str, list[dict[str, str]]]:
+    parsed: dict[str, list[dict[str, str]]] = {}
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        for name in archive.namelist():
+            if not name.endswith(".txt"):
+                continue
+            with archive.open(name) as raw:
+                text = io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")
+                parsed[name.rsplit("/", 1)[-1]] = list(csv.DictReader(text))
+    return parsed
+
+
+def persist_gtfs(payload: bytes) -> None:
+    target = os.path.abspath(GTFS_STORE_PATH)
+    directory = os.path.dirname(target) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".dakar-bus-gtfs-", suffix=".zip", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def load_persisted_gtfs() -> bool:
+    global GTFS_LOADED
+    target = os.path.abspath(GTFS_STORE_PATH)
+    if not os.path.isfile(target):
+        return False
+    try:
+        with open(target, "rb") as handle:
+            parsed = parse_gtfs_zip(handle.read())
+        errors = validate_gtfs(parsed)
+        if errors:
+            return False
+        GTFS.clear()
+        GTFS.update(parsed)
+        GTFS_LOADED = True
+        return True
+    except (OSError, zipfile.BadZipFile, UnicodeDecodeError):
+        return False
+
+
+@app.on_event("startup")
+def restore_gtfs_on_startup() -> None:
+    load_persisted_gtfs()
 
 
 def service_active(service_id: str, day: date) -> bool:
@@ -350,16 +405,9 @@ async def import_gtfs(file: UploadFile = File(...)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="A GTFS ZIP is required.")
 
     payload = await file.read()
-    parsed: dict[str, list[dict[str, str]]] = {}
 
     try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            for name in archive.namelist():
-                if not name.endswith(".txt"):
-                    continue
-                with archive.open(name) as raw:
-                    text = io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")
-                    parsed[name.rsplit("/", 1)[-1]] = list(csv.DictReader(text))
+        parsed = parse_gtfs_zip(payload)
     except (zipfile.BadZipFile, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid GTFS archive: {exc}") from exc
 
@@ -373,6 +421,13 @@ async def import_gtfs(file: UploadFile = File(...)) -> dict[str, Any]:
                 "errors": errors,
             },
         )
+
+    # Persist only after complete validation. The canonical in-memory dataset is
+    # replaced only after the durable write succeeds.
+    try:
+        persist_gtfs(payload)
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail=f"GTFS storage unavailable: {exc}") from exc
 
     GTFS.clear()
     GTFS.update(parsed)
