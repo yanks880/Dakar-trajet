@@ -235,13 +235,21 @@ def nearby(lat: float, lon: float, walk_minutes: int = 15) -> dict[str, Any]:
             continue
         distance = _distance_m(lat, lon, slat, slon)
         if distance <= radius_m:
+            stop_id = stop.get("stop_id", "")
+            next_dep = next_departures(stop_id, datetime.now().astimezone(), limit=1)
+            departure = next_dep[0] if next_dep else None
             result.append({
-                "id": stop.get("stop_id"),
+                "id": stop_id,
                 "name": stop.get("stop_name"),
                 "lat": slat,
                 "lon": slon,
                 "distance_m": round(distance),
                 "source_status": "GTFS",
+                "next_departure": departure.get("departure_time") if departure else None,
+                "next_route_short_name": departure.get("route_short_name") if departure else None,
+                "next_route_name": departure.get("route_name") if departure else None,
+                "next_headsign": departure.get("headsign") if departure else None,
+                "next_status": departure.get("status") if departure else "UNKNOWN",
             })
     result.sort(key=lambda x: x["distance_m"])
     return {"status": "SCHEDULED", "radius_m": round(radius_m), "stops": result[:50]}
