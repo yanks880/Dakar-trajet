@@ -228,22 +228,285 @@ class _SchedulePanel extends StatelessWidget {
   );
 }
 
-class SearchPage extends StatelessWidget {
+class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const Center(
-    child: Padding(
-      padding: EdgeInsets.all(28),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.route, size: 58, color: Color(0xFF00A86B)),
-        SizedBox(height: 16),
-        Text('Itinéraires multimodaux', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
-        SizedBox(height: 8),
-        Text('Recherche WALK + TER + BRT + DDD + AFTU + correspondances. Aucun itinéraire n’est calculé tant que les données vérifiées ne sont pas disponibles.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, height: 1.4)),
-      ]),
-    ),
+  State<SearchPage> createState() => _SearchPageState();
+}
+
+class _SearchPageState extends State<SearchPage> {
+  final controller = TextEditingController();
+  final repository = NetworkRepository(
+    api: ApiClient(baseUrl: const String.fromEnvironment('DAKAR_BUS_API_URL')),
   );
+
+  bool loading = false;
+  String? error;
+  List<NetworkSearchResult> results = const [];
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> search() async {
+    final query = controller.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      loading = true;
+      error = null;
+      results = const [];
+    });
+    try {
+      final found = await repository.search(query);
+      if (!mounted) return;
+      setState(() => results = found);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> openStop(NetworkSearchResult result) async {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _StopSheet(repository: repository, result: result),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text('Trajets', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+                SizedBox(height: 5),
+                Text('Rechercher un arrêt vérifié dans le réseau chargé.', style: TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+          sliver: SliverToBoxAdapter(
+            child: TextField(
+              controller: controller,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => search(),
+              decoration: InputDecoration(
+                hintText: 'Nom d’arrêt ou de gare',
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF008F60)),
+                suffixIcon: IconButton(
+                  onPressed: loading ? null : search,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (loading)
+          const SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            sliver: SliverToBoxAdapter(child: LinearProgressIndicator()),
+          ),
+        if (error != null)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            sliver: SliverToBoxAdapter(
+              child: _InfoCard(
+                icon: Icons.cloud_off_outlined,
+                title: 'Données indisponibles',
+                message: 'L’API canonique n’est pas configurée ou ne répond pas. Aucun résultat n’est inventé.',
+              ),
+            ),
+          ),
+        if (!loading && error == null && controller.text.trim().isNotEmpty && results.isEmpty)
+          const SliverPadding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, 8),
+            sliver: SliverToBoxAdapter(
+              child: _InfoCard(
+                icon: Icons.search_off_outlined,
+                title: 'Aucun arrêt vérifié',
+                message: 'Aucun arrêt correspondant n’a été retourné par le réseau canonique.',
+              ),
+            ),
+          ),
+        if (results.isNotEmpty)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            sliver: SliverList.separated(
+              itemCount: results.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, index) {
+                final item = results[index];
+                return Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => openStop(item),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const CircleAvatar(
+                            backgroundColor: Color(0xFFE3F6EE),
+                            foregroundColor: Color(0xFF008F60),
+                            child: Icon(Icons.place_outlined),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                const SizedBox(height: 4),
+                                Text(item.id, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, color: Colors.black38),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _StopSheet extends StatefulWidget {
+  final NetworkRepository repository;
+  final NetworkSearchResult result;
+  const _StopSheet({required this.repository, required this.result});
+
+  @override
+  State<_StopSheet> createState() => _StopSheetState();
+}
+
+class _StopSheetState extends State<_StopSheet> {
+  NetworkStopDetail? detail;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    try {
+      final value = await widget.repository.stopDetail(widget.result.id);
+      if (mounted) setState(() => detail = value);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final departures = detail?.departures ?? const <NetworkDeparture>[];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.result.name, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 5),
+            Text(widget.result.id, style: const TextStyle(color: Colors.black45, fontSize: 12)),
+            const SizedBox(height: 18),
+            if (detail == null && error == null)
+              const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+            else if (error != null)
+              _InfoCard(
+                icon: Icons.cloud_off_outlined,
+                title: 'Horaires indisponibles',
+                message: 'La source canonique n’a pas fourni de départs. Aucun horaire n’est inventé.',
+              )
+            else if (departures.isEmpty)
+              const _InfoCard(
+                icon: Icons.schedule_outlined,
+                title: 'Aucun départ vérifié',
+                message: 'Aucun départ programmé n’a été retourné pour cet arrêt à cet instant.',
+              )
+            else
+              ...departures.map((departure) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule_outlined, color: Color(0xFF008F60)),
+                    title: Text(
+                      departure.routeShortName ?? departure.routeName ?? 'Ligne vérifiée',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(departure.headsign?.trim().isNotEmpty == true
+                        ? departure.headsign!
+                        : 'Direction non renseignée par le GTFS'),
+                    trailing: Text(
+                      departure.departureTime,
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                    ),
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  const _InfoCard({required this.icon, required this.title, required this.message});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .05), blurRadius: 18, offset: const Offset(0, 7))],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: const Color(0xFF008F60)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 5),
+                  Text(message, style: const TextStyle(color: Colors.black54, height: 1.35)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class AlertsPage extends StatelessWidget {
