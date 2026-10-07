@@ -204,6 +204,88 @@ def network() -> dict[str, Any]:
     }
 
 
+
+def _safe_float(value: str | None) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+    radius = 6371000.0
+    p1, p2 = radians(lat1), radians(lat2)
+    dp, dl = radians(lat2 - lat1), radians(lon2 - lon1)
+    a = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
+    return 2 * radius * asin(sqrt(a))
+
+
+@app.get("/v1/nearby")
+def nearby(lat: float, lon: float, walk_minutes: int = 15) -> dict[str, Any]:
+    if not GTFS_LOADED:
+        return {"status": "UNKNOWN", "stops": [], "message": "GTFS officiel non chargé."}
+    safe_minutes = max(1, min(walk_minutes, 30))
+    radius_m = safe_minutes * 83.0
+    result = []
+    for stop in rows("stops.txt"):
+        slat = _safe_float(stop.get("stop_lat"))
+        slon = _safe_float(stop.get("stop_lon"))
+        if slat is None or slon is None:
+            continue
+        distance = _distance_m(lat, lon, slat, slon)
+        if distance <= radius_m:
+            result.append({
+                "id": stop.get("stop_id"),
+                "name": stop.get("stop_name"),
+                "lat": slat,
+                "lon": slon,
+                "distance_m": round(distance),
+                "source_status": "GTFS",
+            })
+    result.sort(key=lambda x: x["distance_m"])
+    return {"status": "SCHEDULED", "radius_m": round(radius_m), "stops": result[:50]}
+
+
+@app.get("/v1/geometries")
+def geometries() -> dict[str, Any]:
+    if not GTFS_LOADED:
+        return {"status": "UNKNOWN", "routes": [], "message": "GTFS officiel non chargé."}
+    shapes = rows("shapes.txt")
+    if not shapes:
+        return {"status": "UNKNOWN", "routes": [], "message": "Aucune géométrie shapes.txt vérifiée dans le GTFS chargé."}
+    trips = {r["trip_id"]: r for r in rows("trips.txt")}
+    routes = {r["route_id"]: r for r in rows("routes.txt")}
+    shape_groups: dict[str, list[dict[str, str]]] = {}
+    for point in shapes:
+        sid = point.get("shape_id", "")
+        if sid:
+            shape_groups.setdefault(sid, []).append(point)
+    route_shapes: dict[str, str] = {}
+    for trip in trips.values():
+        route_id, shape_id = trip.get("route_id", ""), trip.get("shape_id", "")
+        if route_id and shape_id and route_id not in route_shapes:
+            route_shapes[route_id] = shape_id
+    output = []
+    for route_id, shape_id in route_shapes.items():
+        points = shape_groups.get(shape_id, [])
+        points.sort(key=lambda p: float(p.get("shape_pt_sequence", "0") or "0"))
+        geometry = []
+        for point in points:
+            lat, lon = _safe_float(point.get("shape_pt_lat")), _safe_float(point.get("shape_pt_lon"))
+            if lat is not None and lon is not None:
+                geometry.append([lat, lon])
+        if geometry:
+            route = routes.get(route_id, {})
+            output.append({
+                "route_id": route_id,
+                "route_short_name": route.get("route_short_name"),
+                "route_long_name": route.get("route_long_name"),
+                "geometry": geometry,
+                "source_status": "GTFS",
+            })
+    return {"status": "SCHEDULED" if output else "UNKNOWN", "routes": output}
+
 @app.get("/v1/stops")
 def stops(limit: int = 100) -> dict[str, Any]:
     if not GTFS_LOADED:
