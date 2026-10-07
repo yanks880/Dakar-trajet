@@ -1,0 +1,45 @@
+name: Dakar Bus Flutter
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  build-web:
+    if: github.event_name == 'push'
+    needs: analyze
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build web --release --base-href /Dakar-trajet/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+      - uses: actions/deploy-pages@v4
