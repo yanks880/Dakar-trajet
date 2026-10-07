@@ -23,7 +23,7 @@ class JourneyRequest(BaseModel):
     origin: str
     destination: str
     at: datetime | None = None
-    modes: list[str] = ["walk", "ter", "brt", "ddd", "aftu"]
+    modes: list[str] = ["ter", "bus"]
 
 
 REQUIRED_COLUMNS: dict[str, set[str]] = {
