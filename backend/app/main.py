@@ -204,6 +204,34 @@ def network() -> dict[str, Any]:
     }
 
 
+@app.get("/v1/stops")
+def stops(limit: int = 100) -> dict[str, Any]:
+    if not GTFS_LOADED:
+        return {"status": "UNKNOWN", "stops": [], "message": "GTFS officiel non chargé."}
+    safe_limit = max(1, min(limit, 500))
+    return {
+        "status": "SCHEDULED",
+        "stops": [
+            {"id": s.get("stop_id"), "name": s.get("stop_name"), "lat": s.get("stop_lat"), "lon": s.get("stop_lon"), "source_status": "GTFS"}
+            for s in rows("stops.txt")[:safe_limit]
+        ],
+    }
+
+
+@app.get("/v1/stops/{stop_id}")
+def stop_detail(stop_id: str) -> dict[str, Any]:
+    if not GTFS_LOADED:
+        return {"status": "UNKNOWN", "stop": None, "departures": [], "message": "GTFS officiel non chargé."}
+    stop = next((s for s in rows("stops.txt") if s.get("stop_id") == stop_id), None)
+    if stop is None:
+        raise HTTPException(status_code=404, detail="Stop not found")
+    return {
+        "status": "SCHEDULED",
+        "stop": {"id": stop.get("stop_id"), "name": stop.get("stop_name"), "lat": stop.get("stop_lat"), "lon": stop.get("stop_lon")},
+        "departures": next_departures(stop_id, datetime.now().astimezone()),
+    }
+
+
 @app.get("/v1/search")
 def search(q: str) -> dict[str, Any]:
     query = q.strip().lower()
