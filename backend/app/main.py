@@ -317,6 +317,11 @@ def departures(stop_id: str, at: datetime | None = None) -> dict[str, Any]:
 
 @app.post("/v1/journeys")
 def journeys(request: JourneyRequest) -> dict[str, Any]:
+    """Return only journeys that can be proven from the loaded GTFS.
+
+    This phase deliberately computes direct trips only. It never invents walking
+    times, transfer times, frequencies, realtime positions or unsupported modes.
+    """
     if not GTFS_LOADED:
         return {
             "status": "UNKNOWN",
@@ -324,48 +329,88 @@ def journeys(request: JourneyRequest) -> dict[str, Any]:
             "message": "Le moteur multimodal attend le GTFS officiel. Aucun itinéraire horaire n'est inventé.",
         }
 
-    origin_matches = [
-        s for s in rows("stops.txt")
-        if request.origin.lower() in s.get("stop_name", "").lower()
-    ]
-    destination_matches = [
-        s for s in rows("stops.txt")
-        if request.destination.lower() in s.get("stop_name", "").lower()
-    ]
+    origin_query = request.origin.strip().lower()
+    destination_query = request.destination.strip().lower()
+    if not origin_query or not destination_query:
+        return {"status": "UNKNOWN", "journeys": [], "message": "Origine et destination requises."}
 
-    stop_times = rows("stop_times.txt")
-    origin_ids = {s.get("stop_id") for s in origin_matches}
-    destination_ids = {s.get("stop_id") for s in destination_matches}
-    by_trip: dict[str, list[dict[str, str]]] = {}
-    for st in stop_times:
-        by_trip.setdefault(st.get("trip_id", ""), []).append(st)
+    origin_ids = {
+        s.get("stop_id") for s in rows("stops.txt")
+        if origin_query in s.get("stop_name", "").lower()
+    }
+    destination_ids = {
+        s.get("stop_id") for s in rows("stops.txt")
+        if destination_query in s.get("stop_name", "").lower()
+    }
+    if not origin_ids or not destination_ids:
+        return {
+            "status": "UNKNOWN",
+            "journeys": [],
+            "message": "Origine ou destination absente du GTFS chargé.",
+        }
 
-    direct_trip_ids: set[str] = set()
-    for trip_id, trip_stops in by_trip.items():
-        ordered = sorted(trip_stops, key=lambda x: int(x.get("stop_sequence", "0") or "0"))
-        origin_positions = [i for i, x in enumerate(ordered) if x.get("stop_id") in origin_ids]
-        destination_positions = [i for i, x in enumerate(ordered) if x.get("stop_id") in destination_ids]
-        if any(o < d for o in origin_positions for d in destination_positions):
-            direct_trip_ids.add(trip_id)
-
+    moment = request.at or datetime.now().astimezone()
+    allowed_modes = {m.strip().lower() for m in request.modes if m.strip()}
+    # GTFS route_type is authoritative. We only expose a local mode label when
+    # the GTFS route_type can prove the family; operator-specific labels are not guessed.
+    route_type_mode = {"2": "ter", "3": "bus"}
     trips = {r["trip_id"]: r for r in rows("trips.txt")}
     routes = {r["route_id"]: r for r in rows("routes.txt")}
-    journeys_out = []
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for st in rows("stop_times.txt"):
+        trip_id = st.get("trip_id", "")
+        if trip_id:
+            grouped.setdefault(trip_id, []).append(st)
 
-    for trip_id in sorted(direct_trip_ids):
-        trip = trips.get(trip_id, {})
+    journeys_out: list[dict[str, Any]] = []
+    target_seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
+
+    for trip_id, trip_stops in grouped.items():
+        trip = trips.get(trip_id)
+        if not trip or not service_active(trip.get("service_id", ""), moment.date()):
+            continue
         route = routes.get(trip.get("route_id", ""), {})
-        journeys_out.append({
-            "trip_id": trip_id,
-            "route_id": trip.get("route_id"),
-            "route_short_name": route.get("route_short_name"),
-            "route_long_name": route.get("route_long_name"),
-            "mode": route.get("route_type"),
-            "status": "SCHEDULED",
-        })
+        mode = route_type_mode.get(route.get("route_type", ""), "unknown")
+        if allowed_modes and mode != "unknown" and mode not in allowed_modes and not (mode == "bus" and bool({"brt", "ddd", "aftu"} & allowed_modes)):
+            continue
 
+        ordered = sorted(
+            trip_stops,
+            key=lambda x: int(x.get("stop_sequence", "0") or "0"),
+        )
+        origin_rows = [x for x in ordered if x.get("stop_id") in origin_ids]
+        destination_rows = [x for x in ordered if x.get("stop_id") in destination_ids]
+        for origin_row in origin_rows:
+            dep_seconds = parse_gtfs_time(origin_row.get("departure_time", ""))
+            if dep_seconds is None or dep_seconds < target_seconds:
+                continue
+            for destination_row in destination_rows:
+                if int(origin_row.get("stop_sequence", "0") or "0") >= int(destination_row.get("stop_sequence", "0") or "0"):
+                    continue
+                arr_seconds = parse_gtfs_time(destination_row.get("arrival_time", ""))
+                if arr_seconds is None or arr_seconds < dep_seconds:
+                    continue
+                journeys_out.append({
+                    "trip_id": trip_id,
+                    "route_id": trip.get("route_id"),
+                    "route_short_name": route.get("route_short_name"),
+                    "route_long_name": route.get("route_long_name"),
+                    "route_type": route.get("route_type"),
+                    "mode": mode,
+                    "headsign": trip.get("trip_headsign"),
+                    "departure_time": origin_row.get("departure_time"),
+                    "arrival_time": destination_row.get("arrival_time"),
+                    "status": "SCHEDULED",
+                    "source_status": "GTFS",
+                })
+                break
+
+    journeys_out.sort(key=lambda x: (
+        parse_gtfs_time(x.get("departure_time", "")) or 10**9,
+        parse_gtfs_time(x.get("arrival_time", "")) or 10**9,
+    ))
     return {
-        "status": "SCHEDULED",
+        "status": "SCHEDULED" if journeys_out else "UNKNOWN",
         "journeys": journeys_out[:10],
-        "message": "Phase 1: trajets directs issus du GTFS. Les correspondances multimodales seront calculées par le graphe PostGIS.",
+        "message": "Trajets directs calculés exclusivement à partir des horaires GTFS vérifiés." if journeys_out else "Aucun trajet direct vérifié trouvé pour le moment demandé.",
     }
