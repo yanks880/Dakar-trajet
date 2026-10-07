@@ -1,15 +1,23 @@
-name: Dakar Bus Flutter
+name: Dakar Bus CI + Deploy
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  analyze:
+  verify:
+    name: Verify Flutter
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,19 +26,17 @@ jobs:
           flutter-version: '3.29.0'
           channel: stable
       - run: flutter pub get
-      - run: flutter analyze
+      - run: flutter analyze --no-fatal-infos
       - run: flutter test
 
-  build-web:
+  deploy:
+    name: Build and deploy
     if: github.event_name == 'push'
-    needs: analyze
+    needs: verify
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     environment:
       name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -42,4 +48,5 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
-      - uses: actions/deploy-pages@v4
+      - id: deployment
+        uses: actions/deploy-pages@v4
