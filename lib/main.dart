@@ -192,8 +192,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
               title: Text(stop.name, style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text(
                 route == null
-                    ? 'À environ \${stop.distanceM.round()} m'
-                    : 'À environ \${stop.distanceM.round()} m · \${route}\${stop.nextHeadsign == null || stop.nextHeadsign!.trim().isEmpty ? '' : ' → \${stop.nextHeadsign}'}',
+                    ? 'À environ ${stop.distanceM.round()} m'
+                    : 'À environ ${stop.distanceM.round()} m · $route${stop.nextHeadsign == null || stop.nextHeadsign!.trim().isEmpty ? '' : ' → ${stop.nextHeadsign}'}',
               ),
               trailing: departure == null
                   ? const Text('—', style: TextStyle(color: Colors.black38, fontWeight: FontWeight.w800))
