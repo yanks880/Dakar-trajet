@@ -3,6 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'services/gps_service.dart';
+import 'data/network_repository.dart';
+import 'services/api_client.dart';
 
 void main() => runApp(const DakarBusApp());
 
