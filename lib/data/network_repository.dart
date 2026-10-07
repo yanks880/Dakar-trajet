@@ -42,6 +42,20 @@ class NetworkStopDetail {
   const NetworkStopDetail({required this.stop, required this.departures});
 }
 
+
+class NetworkNearbyStop {
+  final String id, name;
+  final double lat, lon, distanceM;
+  const NetworkNearbyStop({required this.id, required this.name, required this.lat, required this.lon, required this.distanceM});
+}
+
+class NetworkGeometry {
+  final String routeId;
+  final String? shortName, longName;
+  final List<({double lat, double lon})> points;
+  const NetworkGeometry({required this.routeId, this.shortName, this.longName, required this.points});
+}
+
 class NetworkRepository {
   final ApiClient api;
   const NetworkRepository({required this.api});
@@ -113,6 +127,32 @@ class NetworkRepository {
       departureTime: item['departure_time']?.toString() ?? '',
       status: item['status']?.toString() ?? 'UNKNOWN',
     )).where((x) => x.departureTime.isNotEmpty).toList();
+  }
+
+
+  Future<List<NetworkNearbyStop>> nearby(double lat, double lon, {int walkMinutes = 15}) async {
+    final data = await api.getJson('/v1/nearby?lat=$lat&lon=$lon&walk_minutes=$walkMinutes');
+    final raw = data['stops'];
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) => NetworkNearbyStop(
+      id: item['id']?.toString() ?? '',
+      name: item['name']?.toString() ?? '',
+      lat: double.tryParse(item['lat']?.toString() ?? '') ?? 0,
+      lon: double.tryParse(item['lon']?.toString() ?? '') ?? 0,
+      distanceM: double.tryParse(item['distance_m']?.toString() ?? '') ?? 0,
+    )).where((x) => x.id.isNotEmpty && x.name.isNotEmpty && x.lat != 0 && x.lon != 0).toList();
+  }
+
+  Future<List<NetworkGeometry>> geometries() async {
+    final data = await api.getJson('/v1/geometries');
+    final raw = data['routes'];
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) {
+      final points = item['geometry'] is List
+          ? (item['geometry'] as List).whereType<List>().map((p) => (lat: double.tryParse(p[0].toString()) ?? 0, lon: double.tryParse(p[1].toString()) ?? 0)).where((p) => p.lat != 0 && p.lon != 0).toList()
+          : <({double lat, double lon})>[];
+      return NetworkGeometry(routeId: item['route_id']?.toString() ?? '', shortName: item['route_short_name']?.toString(), longName: item['route_long_name']?.toString(), points: points);
+    }).where((x) => x.routeId.isNotEmpty && x.points.length > 1).toList();
   }
 
   List<Route> get routes => const [];
