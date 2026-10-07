@@ -28,6 +28,11 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
+      - name: Verify backend
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m compileall -q backend/app
+          python -c "from backend.app.main import app; assert app.title == 'Dakar Bus API'"
 
   deploy:
     name: Build and deploy
@@ -45,7 +50,8 @@ jobs:
           channel: stable
       - run: flutter pub get
       - run: flutter build web --release --base-href /Dakar-trajet/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
       - id: deployment
