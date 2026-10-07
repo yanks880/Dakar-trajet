@@ -37,6 +37,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int tab = 0;
+  final repository = NetworkRepository(api: ApiClient(baseUrl: const String.fromEnvironment('DAKAR_BUS_API_URL')));
   final gps = GpsService();
 
   Future<void> locate() async {
@@ -61,6 +62,8 @@ class _HomePageState extends State<HomePage> {
             ExplorerPage(onLocate: locate),
             const SearchPage(),
             const AlertsPage(),
+            const StreetPage(),
+            const SettingsPage(),
           ],
         ),
       ),
@@ -71,6 +74,8 @@ class _HomePageState extends State<HomePage> {
           NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map), label: 'Explorer'),
           NavigationDestination(icon: Icon(Icons.route_outlined), selectedIcon: Icon(Icons.route), label: 'Trajets'),
           NavigationDestination(icon: Icon(Icons.notifications_none), selectedIcon: Icon(Icons.notifications), label: 'Alertes'),
+          NavigationDestination(icon: Icon(Icons.streetview_outlined), selectedIcon: Icon(Icons.streetview), label: 'Direct rue'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Paramètres'),
         ],
       ),
     );
@@ -563,5 +568,37 @@ class _DataNotice extends StatelessWidget {
       SizedBox(width: 12),
       Expanded(child: Text('Données vérifiées uniquement. Les horaires, fréquences et positions temps réel ne seront affichés que lorsqu’une source fiable est disponible.', style: TextStyle(color: Color(0xFF175B46), height: 1.35))),
     ]),
+  );
+}
+
+
+class StreetPage extends StatelessWidget {
+  const StreetPage({super.key});
+  @override
+  Widget build(BuildContext context) => const Center(
+    child: Padding(
+      padding: EdgeInsets.all(28),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.streetview, size: 58, color: Color(0xFF00A86B)),
+        SizedBox(height: 16),
+        Text('Direct rue', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+        SizedBox(height: 8),
+        Text('Vue rue et contexte géographique. Aucun flux vidéo ou position en direct ne sera simulé sans source disponible.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, height: 1.4)),
+      ]),
+    ),
+  );
+}
+
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(20),
+    children: const [
+      Text('Paramètres', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+      SizedBox(height: 16),
+      Card(child: ListTile(leading: Icon(Icons.location_on_outlined), title: Text('Localisation'), subtitle: Text('Autorisation GPS utilisée pour les mobilités proches.'))),
+      Card(child: ListTile(leading: Icon(Icons.verified_outlined), title: Text('Données vérifiées'), subtitle: Text('Aucun horaire, tracé ou statut temps réel n’est inventé.'))),
+    ],
   );
 }
