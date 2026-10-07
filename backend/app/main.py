@@ -96,10 +96,22 @@ def validate_gtfs(parsed: dict[str, list[dict[str, str]]]) -> list[str]:
 
     for child_file, refs in FOREIGN_KEYS.items():
         for child_key, parent_file, parent_key in refs:
-            parent_values = {
-                row.get(parent_key, "").strip()
-                for row in parsed.get(parent_file, [])
-            }
+            if child_file == "trips.txt" and child_key == "service_id":
+                parent_values = {
+                    row.get(parent_key, "").strip()
+                    for row in parsed.get("calendar.txt", [])
+                } | {
+                    row.get(parent_key, "").strip()
+                    for row in parsed.get("calendar_dates.txt", [])
+                }
+                if not parent_values:
+                    errors.append("trips.txt: service_id has no calendar.txt or calendar_dates.txt source")
+                    continue
+            else:
+                parent_values = {
+                    row.get(parent_key, "").strip()
+                    for row in parsed.get(parent_file, [])
+                }
             for row in parsed.get(child_file, []):
                 value = row.get(child_key, "").strip()
                 if value and value not in parent_values:
@@ -296,9 +308,17 @@ def journeys(request: JourneyRequest) -> dict[str, Any]:
     stop_times = rows("stop_times.txt")
     origin_ids = {s.get("stop_id") for s in origin_matches}
     destination_ids = {s.get("stop_id") for s in destination_matches}
-    origin_trips = {x.get("trip_id") for x in stop_times if x.get("stop_id") in origin_ids}
-    destination_trips = {x.get("trip_id") for x in stop_times if x.get("stop_id") in destination_ids}
-    direct_trip_ids = origin_trips & destination_trips
+    by_trip: dict[str, list[dict[str, str]]] = {}
+    for st in stop_times:
+        by_trip.setdefault(st.get("trip_id", ""), []).append(st)
+
+    direct_trip_ids: set[str] = set()
+    for trip_id, trip_stops in by_trip.items():
+        ordered = sorted(trip_stops, key=lambda x: int(x.get("stop_sequence", "0") or "0"))
+        origin_positions = [i for i, x in enumerate(ordered) if x.get("stop_id") in origin_ids]
+        destination_positions = [i for i, x in enumerate(ordered) if x.get("stop_id") in destination_ids]
+        if any(o < d for o in origin_positions for d in destination_positions):
+            direct_trip_ids.add(trip_id)
 
     trips = {r["trip_id"]: r for r in rows("trips.txt")}
     routes = {r["route_id"]: r for r in rows("routes.txt")}
