@@ -82,129 +82,122 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class ExplorerPage extends StatelessWidget {
+class ExplorerPage extends StatefulWidget {
   final VoidCallback onLocate;
   const ExplorerPage({super.key, required this.onLocate});
+  @override
+  State<ExplorerPage> createState() => _ExplorerPageState();
+}
+
+class _ExplorerPageState extends State<ExplorerPage> {
+  final repository = NetworkRepository(api: ApiClient(baseUrl: const String.fromEnvironment('DAKAR_BUS_API_URL')));
+  List<NetworkNearbyStop> nearby = const [];
+  List<NetworkGeometry> geometries = const [];
+  bool loadingNearby = false;
+
+  Future<void> loadNearby() async {
+    setState(() => loadingNearby = true);
+    try {
+      final position = await GpsService().currentPosition();
+      if (position != null) {
+        final stops = await repository.nearby(position.latitude, position.longitude, walkMinutes: 15);
+        if (mounted) setState(() => nearby = stops);
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => loadingNearby = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    repository.geometries().then((value) {
+      if (mounted) setState(() => geometries = value);
+    }).catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('DAKAR BUS', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: -0.8)),
-                      SizedBox(height: 3),
-                      Text('Votre mobilité, simplement.', style: TextStyle(color: Colors.black54)),
-                    ],
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(color: const Color(0xFFE3F6EE), borderRadius: BorderRadius.circular(16)),
-                  child: IconButton(onPressed: onLocate, icon: const Icon(Icons.my_location, color: Color(0xFF008F60))),
-                ),
-              ],
-            ),
-          ),
+    return CustomScrollView(slivers: [
+      SliverPadding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 8), sliver: SliverToBoxAdapter(
+        child: Row(children: [
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('DAKAR BUS', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: -0.8)),
+            SizedBox(height: 3), Text('Votre mobilité, simplement.', style: TextStyle(color: Colors.black54)),
+          ])),
+          Container(decoration: BoxDecoration(color: const Color(0xFFE3F6EE), borderRadius: BorderRadius.circular(16)),
+            child: IconButton(onPressed: widget.onLocate, icon: const Icon(Icons.my_location, color: Color(0xFF008F60)))),
+        ]),
+      )),
+      SliverPadding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 8), sliver: SliverToBoxAdapter(
+        child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: const [
+          _ModeChip('TER', Icons.train_outlined), SizedBox(width: 8),
+          _ModeChip('BRT', Icons.directions_bus_outlined), SizedBox(width: 8),
+          _ModeChip('DDD', Icons.directions_bus_filled_outlined), SizedBox(width: 8),
+          _ModeChip('AFTU', Icons.airport_shuttle_outlined),
+        ])),
+      )),
+      SliverPadding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 10), sliver: SliverToBoxAdapter(
+        child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 24, offset: const Offset(0, 8))]),
+          child: const Padding(padding: EdgeInsets.all(16), child: Row(children: [
+            Icon(Icons.search, color: Color(0xFF008F60)), SizedBox(width: 12),
+            Expanded(child: Text('Où voulez-vous aller ?', style: TextStyle(fontSize: 16, color: Colors.black54))),
+            Icon(Icons.tune, size: 20, color: Colors.black45),
+          ])),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          sliver: SliverToBoxAdapter(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 24, offset: const Offset(0, 8))],
-              ),
-              child: const Padding(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(Icons.search, color: Color(0xFF008F60)),
-                    SizedBox(width: 12),
-                    Expanded(child: Text('Où voulez-vous aller ?', style: TextStyle(fontSize: 16, color: Colors.black54))),
-                    Icon(Icons.tune, size: 20, color: Colors.black45),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-          sliver: SliverToBoxAdapter(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: SizedBox(
-                height: 330,
-                child: Stack(
-                  children: [
-                    FlutterMap(
-                      options: const MapOptions(initialCenter: LatLng(14.7167, -17.4677), initialZoom: 12.2),
-                      children: [
-                        TileLayer(
-                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.dakarbus.app',
-                        ),
-                        const RichAttributionWidget(
-                          attributions: [TextSourceAttribution('OpenStreetMap contributors')],
-                        ),
-                      ],
-                    ),
-                    Positioned(top: 14, left: 14, child: _MapPill(icon: Icons.layers_outlined, label: 'Réseau')),
-                    Positioned(
-                      bottom: 14,
-                      right: 14,
-                      child: FloatingActionButton.small(
-                        heroTag: 'gps',
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF008F60),
-                        onPressed: onLocate,
-                        child: const Icon(Icons.my_location),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SliverPadding(
-          padding: EdgeInsets.fromLTRB(20, 8, 20, 6),
-          sliver: SliverToBoxAdapter(child: Text('Mobilités', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-          sliver: SliverToBoxAdapter(
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: const [
-                _ModeChip('TER', Icons.train_outlined),
-                _ModeChip('BRT', Icons.directions_bus_outlined),
-                _ModeChip('DDD', Icons.directions_bus_filled_outlined),
-                _ModeChip('AFTU', Icons.airport_shuttle_outlined),
-              ],
-            ),
-          ),
-        ),
-        const SliverPadding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
-          sliver: SliverToBoxAdapter(child: _SchedulePanel()),
-        ),
-        const SliverPadding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 24),
-          sliver: SliverToBoxAdapter(child: _DataNotice()),
-        ),
-      ],
-    );
+      )),
+      SliverPadding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 12), sliver: SliverToBoxAdapter(
+        child: ClipRRect(borderRadius: BorderRadius.circular(28), child: SizedBox(height: 410, child: Stack(children: [
+          FlutterMap(options: const MapOptions(initialCenter: LatLng(14.7167, -17.4677), initialZoom: 11.7), children: [
+            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.dakarbus.app'),
+            if (geometries.isNotEmpty) PolylineLayer(polylines: geometries.map((g) => Polyline(points: g.points.map((p) => LatLng(p.lat, p.lon)).toList(), strokeWidth: 4)).toList()),
+            if (nearby.isNotEmpty) MarkerLayer(markers: nearby.map((s) => Marker(point: LatLng(s.lat, s.lon), width: 42, height: 42, child: const Icon(Icons.location_on, size: 34, color: Color(0xFF008F60)))).toList()),
+            const RichAttributionWidget(attributions: [TextSourceAttribution('OpenStreetMap contributors')]),
+          ]),
+          const Positioned(top: 14, left: 14, child: _MapPill(icon: Icons.layers_outlined, label: 'Réseau Dakar')),
+          Positioned(bottom: 14, left: 14, child: FloatingActionButton.small(heroTag: 'gps-explorer', backgroundColor: Colors.white, foregroundColor: const Color(0xFF008F60), onPressed: loadNearby, child: const Icon(Icons.my_location))),
+          Positioned(bottom: 14, right: 14, child: FloatingActionButton.small(heroTag: 'ai-explorer', backgroundColor: const Color(0xFF008F60), foregroundColor: Colors.white, onPressed: () => showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => const _AiSheet()), child: const Icon(Icons.auto_awesome))),
+        ]))),
+      )),
+      SliverPadding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), sliver: SliverToBoxAdapter(
+        child: Row(children: [
+          const Expanded(child: Text('Mobilités autour de vous', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+          TextButton(onPressed: loadNearby, child: const Text('15 min')),
+        ]),
+      )),
+      if (loadingNearby) const SliverPadding(padding: EdgeInsets.symmetric(horizontal: 20), sliver: SliverToBoxAdapter(child: LinearProgressIndicator())),
+      if (!loadingNearby && nearby.isEmpty) const SliverPadding(padding: EdgeInsets.fromLTRB(20, 4, 20, 12), sliver: SliverToBoxAdapter(
+        child: _InfoCard(icon: Icons.location_searching, title: 'Mobilités proches', message: 'Activez le GPS pour rechercher les arrêts dans un rayon correspondant à 15 minutes de marche.'),
+      )),
+      if (nearby.isNotEmpty) SliverPadding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), sliver: SliverList.separated(
+        itemCount: nearby.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (_, i) => Card(child: ListTile(
+          leading: const Icon(Icons.place_outlined, color: Color(0xFF008F60)),
+          title: Text(nearby[i].name, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text('À environ \${nearby[i].distanceM.round()} m · horaires vérifiés après sélection'),
+          trailing: const Icon(Icons.chevron_right),
+        )),
+      )),
+      const SliverPadding(padding: EdgeInsets.fromLTRB(20, 0, 20, 24), sliver: SliverToBoxAdapter(child: _DataNotice())),
+    ]);
   }
+}
+
+class _AiSheet extends StatelessWidget {
+  const _AiSheet();
+  @override
+  Widget build(BuildContext context) => const SafeArea(child: Padding(
+    padding: EdgeInsets.fromLTRB(20, 8, 20, 28),
+    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Assistant mobilité', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+      SizedBox(height: 8),
+      Text('L’assistant doit répondre à partir des données CETUD/GTFS réellement chargées. Il ne doit jamais inventer une ligne, un horaire, une alerte ou une position.', style: TextStyle(color: Colors.black54, height: 1.4)),
+      SizedBox(height: 16), TextField(decoration: InputDecoration(hintText: 'Posez votre question…', border: OutlineInputBorder())),
+    ]),
+  ));
 }
 
 class _SchedulePanel extends StatelessWidget {
