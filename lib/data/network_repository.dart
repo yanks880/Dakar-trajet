@@ -9,6 +9,39 @@ class NetworkSearchResult {
   const NetworkSearchResult({required this.id, required this.name, this.lat, this.lon});
 }
 
+class NetworkStop {
+  final String id;
+  final String name;
+  final double? lat;
+  final double? lon;
+  const NetworkStop({required this.id, required this.name, this.lat, this.lon});
+}
+
+class NetworkDeparture {
+  final String? tripId;
+  final String? routeId;
+  final String? routeName;
+  final String? routeShortName;
+  final String? headsign;
+  final String departureTime;
+  final String status;
+  const NetworkDeparture({
+    this.tripId,
+    this.routeId,
+    this.routeName,
+    this.routeShortName,
+    this.headsign,
+    required this.departureTime,
+    required this.status,
+  });
+}
+
+class NetworkStopDetail {
+  final NetworkStop stop;
+  final List<NetworkDeparture> departures;
+  const NetworkStopDetail({required this.stop, required this.departures});
+}
+
 class NetworkRepository {
   final ApiClient api;
   const NetworkRepository({required this.api});
@@ -28,6 +61,58 @@ class NetworkRepository {
       lat: double.tryParse(item['lat']?.toString() ?? ''),
       lon: double.tryParse(item['lon']?.toString() ?? ''),
     )).where((x) => x.id.isNotEmpty && x.name.isNotEmpty).toList();
+  }
+
+  Future<List<NetworkStop>> stops({int limit = 100}) async {
+    final data = await api.getJson('/v1/stops?limit=$limit');
+    final raw = data['stops'];
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) => NetworkStop(
+      id: item['id']?.toString() ?? '',
+      name: item['name']?.toString() ?? '',
+      lat: double.tryParse(item['lat']?.toString() ?? ''),
+      lon: double.tryParse(item['lon']?.toString() ?? ''),
+    )).where((x) => x.id.isNotEmpty && x.name.isNotEmpty).toList();
+  }
+
+  Future<NetworkStopDetail> stopDetail(String stopId) async {
+    final data = await api.getJson('/v1/stops/${Uri.encodeComponent(stopId)}');
+    final rawStop = data['stop'];
+    if (rawStop is! Map) throw const ApiException('Arrêt introuvable');
+    final stop = NetworkStop(
+      id: rawStop['id']?.toString() ?? '',
+      name: rawStop['name']?.toString() ?? '',
+      lat: double.tryParse(rawStop['lat']?.toString() ?? ''),
+      lon: double.tryParse(rawStop['lon']?.toString() ?? ''),
+    );
+    final rawDepartures = data['departures'];
+    final departures = rawDepartures is List
+        ? rawDepartures.whereType<Map>().map((item) => NetworkDeparture(
+            tripId: item['trip_id']?.toString(),
+            routeId: item['route_id']?.toString(),
+            routeName: item['route_name']?.toString(),
+            routeShortName: item['route_short_name']?.toString(),
+            headsign: item['headsign']?.toString(),
+            departureTime: item['departure_time']?.toString() ?? '',
+            status: item['status']?.toString() ?? 'UNKNOWN',
+          )).where((x) => x.departureTime.isNotEmpty).toList()
+        : const <NetworkDeparture>[];
+    return NetworkStopDetail(stop: stop, departures: departures);
+  }
+
+  Future<List<NetworkDeparture>> departures(String stopId) async {
+    final data = await api.getJson('/v1/departures?stop_id=${Uri.encodeQueryComponent(stopId)}');
+    final raw = data['departures'];
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) => NetworkDeparture(
+      tripId: item['trip_id']?.toString(),
+      routeId: item['route_id']?.toString(),
+      routeName: item['route_name']?.toString(),
+      routeShortName: item['route_short_name']?.toString(),
+      headsign: item['headsign']?.toString(),
+      departureTime: item['departure_time']?.toString() ?? '',
+      status: item['status']?.toString() ?? 'UNKNOWN',
+    )).where((x) => x.departureTime.isNotEmpty).toList();
   }
 
   List<Route> get routes => const [];
