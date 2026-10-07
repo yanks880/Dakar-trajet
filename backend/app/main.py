@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 app = FastAPI(
     title="Dakar Bus API",
-    version="0.2.0",
+    version="0.3.0",
     description="API multimodale Dakar Bus — aucune donnée de transport n'est inventée.",
 )
 
@@ -26,6 +26,27 @@ class JourneyRequest(BaseModel):
     modes: list[str] = ["walk", "ter", "brt", "ddd", "aftu"]
 
 
+REQUIRED_COLUMNS: dict[str, set[str]] = {
+    "agency.txt": {"agency_id", "agency_name"},
+    "stops.txt": {"stop_id", "stop_name", "stop_lat", "stop_lon"},
+    "routes.txt": {"route_id", "route_type"},
+    "trips.txt": {"route_id", "service_id", "trip_id"},
+    "stop_times.txt": {"trip_id", "arrival_time", "departure_time", "stop_id", "stop_sequence"},
+}
+
+UNIQUE_KEYS = {
+    "agency.txt": "agency_id",
+    "stops.txt": "stop_id",
+    "routes.txt": "route_id",
+    "trips.txt": "trip_id",
+}
+
+FOREIGN_KEYS = {
+    "trips.txt": [("route_id", "routes.txt", "route_id"), ("service_id", "calendar.txt", "service_id")],
+    "stop_times.txt": [("trip_id", "trips.txt", "trip_id"), ("stop_id", "stops.txt", "stop_id")],
+}
+
+
 def rows(name: str) -> list[dict[str, str]]:
     return GTFS.get(name, [])
 
@@ -33,9 +54,70 @@ def rows(name: str) -> list[dict[str, str]]:
 def parse_gtfs_time(value: str) -> int | None:
     try:
         h, m, s = value.split(":")
-        return int(h) * 3600 + int(m) * 60 + int(s)
+        h, m, s = int(h), int(m), int(s)
+        if h < 0 or m not in range(60) or s not in range(60):
+            return None
+        return h * 3600 + m * 60 + s
     except (ValueError, AttributeError):
         return None
+
+
+def validate_gtfs(parsed: dict[str, list[dict[str, str]]]) -> list[str]:
+    errors: list[str] = []
+    required = set(REQUIRED_COLUMNS)
+    missing = sorted(required - parsed.keys())
+    if missing:
+        errors.append(f"missing required files: {', '.join(missing)}")
+        return errors
+
+    for filename, columns in REQUIRED_COLUMNS.items():
+        actual = set(parsed[filename][0].keys()) if parsed[filename] else set()
+        missing_columns = sorted(columns - actual)
+        if missing_columns:
+            errors.append(
+                f"{filename}: missing required columns: {', '.join(missing_columns)}"
+            )
+
+    for filename, key in UNIQUE_KEYS.items():
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for row in parsed.get(filename, []):
+            value = row.get(key, "").strip()
+            if not value:
+                errors.append(f"{filename}: empty {key}")
+                continue
+            if value in seen:
+                duplicates.add(value)
+            seen.add(value)
+        if duplicates:
+            errors.append(
+                f"{filename}: duplicate {key}: {', '.join(sorted(duplicates)[:20])}"
+            )
+
+    for child_file, refs in FOREIGN_KEYS.items():
+        for child_key, parent_file, parent_key in refs:
+            parent_values = {
+                row.get(parent_key, "").strip()
+                for row in parsed.get(parent_file, [])
+            }
+            for row in parsed.get(child_file, []):
+                value = row.get(child_key, "").strip()
+                if value and value not in parent_values:
+                    errors.append(
+                        f"{child_file}: {child_key}={value} has no match in {parent_file}"
+                    )
+                    if len(errors) >= 50:
+                        return errors
+
+    for row in parsed.get("stop_times.txt", []):
+        for key in ("arrival_time", "departure_time"):
+            value = row.get(key, "")
+            if parse_gtfs_time(value) is None:
+                errors.append(f"stop_times.txt: invalid {key}={value}")
+                if len(errors) >= 50:
+                    return errors
+
+    return errors[:50]
 
 
 def service_active(service_id: str, day: date) -> bool:
@@ -52,12 +134,7 @@ def service_active(service_id: str, day: date) -> bool:
     if not cal:
         return True
 
-    weekday = day.strftime("%A").lower()
-    field = {
-        "monday": "monday", "tuesday": "tuesday", "wednesday": "wednesday",
-        "thursday": "thursday", "friday": "friday", "saturday": "saturday",
-        "sunday": "sunday",
-    }[weekday]
+    field = day.strftime("%A").lower()
     return (
         cal.get(field) == "1"
         and cal.get("start_date", "") <= day.strftime("%Y%m%d")
@@ -156,19 +233,26 @@ async def import_gtfs(file: UploadFile = File(...)) -> dict[str, Any]:
     except (zipfile.BadZipFile, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid GTFS archive: {exc}") from exc
 
-    required = {"agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt"}
-    missing = sorted(required - parsed.keys())
-    if missing:
-        raise HTTPException(status_code=422, detail={"missing_required_files": missing})
+    errors = validate_gtfs(parsed)
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "REJECTED",
+                "reason": "GTFS validation failed; existing canonical dataset was not replaced.",
+                "errors": errors,
+            },
+        )
 
     GTFS.clear()
     GTFS.update(parsed)
     GTFS_LOADED = True
 
     return {
-        "status": "imported",
-        "files": {name: len(rows) for name, rows in parsed.items()},
+        "status": "IMPORTED",
+        "files": {name: len(data) for name, data in parsed.items()},
         "realtime": False,
+        "validation": "PASSED",
     }
 
 
@@ -200,8 +284,6 @@ def journeys(request: JourneyRequest) -> dict[str, Any]:
             "message": "Le moteur multimodal attend le GTFS officiel. Aucun itinéraire horaire n'est inventé.",
         }
 
-    # Phase 1: direct journeys only. Multileg routing is intentionally reserved
-    # for the graph/PostGIS layer so no false path is returned.
     origin_matches = [
         s for s in rows("stops.txt")
         if request.origin.lower() in s.get("stop_name", "").lower()
@@ -225,13 +307,12 @@ def journeys(request: JourneyRequest) -> dict[str, Any]:
     for trip_id in sorted(direct_trip_ids):
         trip = trips.get(trip_id, {})
         route = routes.get(trip.get("route_id", ""), {})
-        mode = route.get("route_type")
         journeys_out.append({
             "trip_id": trip_id,
             "route_id": trip.get("route_id"),
             "route_short_name": route.get("route_short_name"),
             "route_long_name": route.get("route_long_name"),
-            "mode": mode,
+            "mode": route.get("route_type"),
             "status": "SCHEDULED",
         })
 
