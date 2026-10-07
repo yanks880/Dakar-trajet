@@ -12,7 +12,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  # Isolate this workflow by branch/ref so a future workflow cannot cancel it accidentally.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -28,8 +29,20 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
       - name: Verify backend syntax
         run: python -m compileall -q backend/app
+      - name: Verify backend imports
+        run: python -c "from backend.app.main import app; assert app.title == 'Dakar Bus API'"
+      - name: Verify GTFS validator
+        run: python -c "from backend.app.main import validate_gtfs; assert isinstance(validate_gtfs({}), list)"
 
   deploy:
     name: Build and deploy
@@ -45,9 +58,9 @@ jobs:
         with:
           flutter-version: '3.29.0'
           channel: stable
+      - uses: actions/configure-pages@v5
       - run: flutter pub get
       - run: flutter build web --release --base-href /Dakar-trajet/
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
