@@ -113,7 +113,7 @@ class ExplorerPage extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(22),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(.07), blurRadius: 24, offset: const Offset(0, 8))],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .07), blurRadius: 24, offset: const Offset(0, 8))],
               ),
               child: const Padding(
                 padding: EdgeInsets.all(16),
@@ -209,7 +209,7 @@ class _SchedulePanel extends StatelessWidget {
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(22),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(.05), blurRadius: 18, offset: const Offset(0, 7))],
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .05), blurRadius: 18, offset: const Offset(0, 7))],
     ),
     child: const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,7 +270,7 @@ class _MapPill extends StatelessWidget {
   const _MapPill({required this.icon, required this.label});
   @override
   Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(color: Colors.white.withOpacity(.94), borderRadius: BorderRadius.circular(14), boxShadow: const [BoxShadow(blurRadius: 12, color: Color(0x22000000))]),
+    decoration: BoxDecoration(color: Colors.white.withValues(alpha: .94), borderRadius: BorderRadius.circular(14), boxShadow: const [BoxShadow(blurRadius: 12, color: Color(0x22000000))]),
     child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), child: Row(children: [Icon(icon, size: 18, color: const Color(0xFF008F60)), const SizedBox(width: 7), Text(label, style: const TextStyle(fontWeight: FontWeight.w700))])),
   );
 }
