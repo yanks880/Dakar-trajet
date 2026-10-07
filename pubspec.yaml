@@ -1,7 +1,7 @@
 name: dakar_bus
 description: Dakar Bus — assistant de mobilité multimodale pour Dakar.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -12,6 +12,7 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   geolocator: ^13.0.2
+  http: ^1.3.0
 
 dev_dependencies:
   flutter_test:
